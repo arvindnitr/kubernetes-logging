@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+   name: log-streaming
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: log-streaming
+  serviceName: log-streaming-service
+  template:
+    metadata:
+      labels:
+        app: log-streaming
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - log-streaming 
+            topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: log-producer
+        image: centos:7
+        args:
+        - /bin/sh
+        - -c
+        - >
+          i=0;
+          while true;
+          do
+            export logmessage="$i: $(date)";
+            echo "$logmessage" >> /var/log/$(MY_POD_NAME).log;
+            echo "$logmessage"; 
+            i=$((i+1));
+            sleep 3;
+          done
+        env:
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        volumeMounts:
+        - name: mypd
+          mountPath: /var/log
+      - name: stream
+        image: centos:7
+        args: [/bin/sh, -c, "tail -n+1 -f /var/log/$(MY_POD_NAME).log"]
+        env:
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        volumeMounts:
+        - name: mypd
+          mountPath: /var/log
+  volumeClaimTemplates:
+    - metadata:
+        name: mypd
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 1Gi
